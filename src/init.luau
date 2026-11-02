@@ -167,7 +167,6 @@ local function NewBind(Name: string, Index: string, ...)
 			warn(string.format("[Lunora]: InvokeClient failed. %s", tostring(Result)))
 			return nil
 		end
-
 		return Result
 	end
 

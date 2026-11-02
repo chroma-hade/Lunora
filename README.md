@@ -14,7 +14,7 @@ If you use Wally, add it to your `wally.toml`:
 
 ```toml
 [dependencies]
-Lunora = "chroma-hade/lunora@1.0.1"
+Lunora = "chroma-hade/lunora@1.0.2"
 ```
 
 Or just copy `src/init.luau` into your project.
