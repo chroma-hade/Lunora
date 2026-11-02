@@ -7,9 +7,14 @@ local IsServer = RunService:IsServer()
 
 local Started = false
 
-local Modules = {}
-local Connections = {}
-local ReadyWaiters = {}
+local MaxFolderWaits = 5
+local FolderWaitInterval = 1
+local MaxArguments = 64
+
+local Modules: { [string]: { [string]: any } } = {}
+local ModuleScripts: { [string]: ModuleScript } = {}
+local Connections: { RBXScriptConnection } = {}
+local ReadyWaiters: { thread } = {}
 
 local RemoteEvent: RemoteEvent
 local RemoteFunction: RemoteFunction
@@ -23,14 +28,12 @@ local function WaitFolder(): Folder?
 	if Folder then
 		return Folder
 	end
-
 	local Count = 0
-	while not Folder and Count < 5 do
-		task.wait(1)
+	while not Folder and Count < MaxFolderWaits do
+		task.wait(FolderWaitInterval)
 		Count += 1
 		Folder = GetFolder()
 	end
-
 	return Folder
 end
 
@@ -61,15 +64,19 @@ local function ResolveRemotes()
 		warn("[Lunora]: Failed to find network folder.")
 		return false
 	end
-
 	RemoteEvent = Folder:FindFirstChildOfClass("RemoteEvent")
 	RemoteFunction = Folder:FindFirstChildOfClass("RemoteFunction")
-
 	return RemoteEvent ~= nil and RemoteFunction ~= nil
 end
 
 local function ImportModule(Module: ModuleScript)
-	if Modules[Module.Name] then
+	local Existing = ModuleScripts[Module.Name]
+	if Existing == Module then
+		return Modules[Module.Name]
+	end
+
+	if Existing then
+		warn(string.format("[Lunora]: Two modules are named '%s'. Keeping %s, skipping %s.", Module.Name, Existing:GetFullName(), Module:GetFullName()))
 		return Modules[Module.Name]
 	end
 
@@ -85,6 +92,8 @@ local function ImportModule(Module: ModuleScript)
 	end
 
 	Modules[Module.Name] = Result
+	ModuleScripts[Module.Name] = Module
+
 	return Result
 end
 
@@ -105,12 +114,10 @@ local function ResolvePublic(Module: { [string]: any }, Index: string): ((...any
 	if typeof(Public) ~= "table" then
 		return nil
 	end
-
 	local Function = Public[Index]
 	if typeof(Function) ~= "function" then
 		return nil
 	end
-
 	return Function
 end
 
@@ -190,8 +197,14 @@ local function ResolvePayload(Data: any): (string?, string?, { any })
 
 	local InData = Data.InData
 	if typeof(InData) ~= "table" then
-		InData = { n = 0 }
+		InData = {}
 	end
+
+	local Count = InData.n
+	if typeof(Count) ~= "number" or Count ~= Count then
+		Count = #InData
+	end
+	InData.n = math.clamp(math.floor(Count), 0, MaxArguments)
 
 	return ModuleName, Index, InData
 end
@@ -213,8 +226,7 @@ local function ListenFromClient(Player: Player, Data: any)
 		warn(string.format("[Lunora]: '%s.Public.%s' is not callable.", ModuleName, Index))
 		return nil
 	end
-
-	return Function(Player, table.unpack(InData, 1, InData.n or #InData))
+	return Function(Player, table.unpack(InData, 1, InData.n))
 end
 
 local function ListenFromServer(Data: any)
@@ -234,8 +246,7 @@ local function ListenFromServer(Data: any)
 		warn(string.format("[Lunora]: '%s.%s' is not callable.", ModuleName, Index))
 		return nil
 	end
-
-	return Function(table.unpack(InData, 1, InData.n or #InData))
+	return Function(table.unpack(InData, 1, InData.n))
 end
 
 local function ConnectServer()
@@ -255,7 +266,6 @@ local function NewSignal()
 	function Signal:Connect(Callback: (...any) -> ())
 		local Connection = { Connected = true, Callback = Callback }
 		table.insert(Listeners, Connection)
-
 		function Connection:Disconnect()
 			Connection.Connected = false
 			local Index = table.find(Listeners, Connection)
@@ -329,7 +339,7 @@ function Lunora.AddModules(Folder: Folder)
 	CollectFolder(Folder)
 end
 
-function Lunora.LoadSelf(Name: string)
+function Lunora.LoadSelf(Name: string): { [string]: any }?
 	local Module = Modules[Name]
 	if not Module then
 		warn(string.format("[Lunora]: LoadSelf failed, '%s' not registered.", Name))
@@ -380,15 +390,16 @@ function Lunora.Start()
 		ConnectClient()
 	end
 
+	RunInit()
+
 	Started = true
+
+	RunStart()
 
 	for _, Thread in ReadyWaiters do
 		task.spawn(Thread)
 	end
 	table.clear(ReadyWaiters)
-
-	RunInit()
-	RunStart()
 
 	print(string.format("[Lunora]: Started on %s.", IsServer and "Server" or "Client"))
 end

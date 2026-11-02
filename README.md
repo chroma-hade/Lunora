@@ -14,7 +14,7 @@ If you use Wally, add it to your `wally.toml`:
 
 ```toml
 [dependencies]
-Lunora = "chroma-hade/lunora@1.0.0"
+Lunora = "chroma-hade/lunora@1.0.1"
 ```
 
 Or just copy `src/init.luau` into your project.
@@ -44,7 +44,7 @@ Lunora.AddModules(script.Parent.Controllers)
 Lunora.Start()
 ```
 
-Every ModuleScript in those folders gets loaded, nested folders too. Lunora keeps track of them by name, so give each one a different name.
+Every ModuleScript in those folders gets loaded, nested folders too. Lunora keeps track of them by name, so give each one a different name. If two share a name, Lunora warns you and keeps the first one.
 
 If a ModuleScript sits directly inside another ModuleScript, Lunora leaves it alone. Handy for private helpers☆
 
@@ -118,7 +118,6 @@ From the client:
 
 ```lua
 local ShopService = Lunora.Load("ShopService")
-
 local Price = ShopService.GetPrice("Sword"):Invoke()
 ShopService.Buy("Sword"):Fire()
 ```
@@ -129,14 +128,13 @@ From the server:
 
 ```lua
 local ShopController = Lunora.Load("ShopController")
-
 ShopController.ShowPurchase("Sword"):Fire(Player)
 ShopController.Refresh():Fire()
 ```
 
 `:Fire(Player)` goes to one player and `:Fire()` goes to everyone. `:Invoke(Player)` needs a player, and if that client errors you get `nil` back instead of an error on the server.
 
-Anything you send before `Lunora.Start()` gets dropped with a warning.
+Anything you send before your modules start gets dropped with a warning, and that includes sending from inside `Init`.
 
 ## Signals
 
