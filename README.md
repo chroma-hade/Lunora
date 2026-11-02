@@ -1,6 +1,6 @@
 # Lunora
 
-A tiny game framework for Roblox! You hand it your modules, it starts them up, and your server and client can call each other by name. The whole thing is one ModuleScript, a little over 400 lines.
+A tiny game framework for Roblox! You hand it your modules, it starts them up, and your server and client can call each other by name. The whole thing is one ModuleScript, under 500 lines.
 
 I use it for my own games☆
 
@@ -14,7 +14,7 @@ If you use Wally, add it to your `wally.toml`:
 
 ```toml
 [dependencies]
-Lunora = "chroma-hade/lunora@1.0.2"
+Lunora = "chroma-hade/lunora@1.0.3"
 ```
 
 Or just copy `src/init.luau` into your project.
@@ -29,8 +29,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 
 local Lunora = require(ReplicatedStorage.Packages.Lunora)
-
 Lunora.AddModules(ServerStorage.Services)
+
 Lunora.Start()
 ```
 
@@ -39,8 +39,8 @@ Lunora.Start()
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Lunora = require(ReplicatedStorage.Packages.Lunora)
-
 Lunora.AddModules(script.Parent.Controllers)
+
 Lunora.Start()
 ```
 
@@ -148,6 +148,7 @@ local Connection = Damaged:Connect(function(Victim, Amount)
 end)
 
 Damaged:Fire(Victim, 10)
+
 Connection:Disconnect()
 ```
 

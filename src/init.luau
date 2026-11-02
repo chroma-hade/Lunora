@@ -19,6 +19,36 @@ local ReadyWaiters: { thread } = {}
 local RemoteEvent: RemoteEvent
 local RemoteFunction: RemoteFunction
 
+type Payload = {
+	ModuleName: string,
+	Index: string,
+	InData: { any },
+}
+
+type Bind = {
+	Fire: (self: Bind, Player: Player?) -> (),
+	Invoke: (self: Bind, Player: Player?) -> ...any,
+}
+
+type SenderMeta = {
+	__index: (any, string) -> (...any) -> Bind,
+}
+
+type Sender = typeof(setmetatable({}, {} :: SenderMeta))
+
+type Connection = {
+	Connected: boolean,
+	Callback: (...any) -> (),
+	Disconnect: (self: Connection) -> (),
+}
+
+type Signal = {
+	Connect: (self: Signal, Callback: (...any) -> ()) -> Connection,
+	Fire: (self: Signal, ...any) -> (),
+	Wait: (self: Signal) -> ...any,
+	Destroy: (self: Signal) -> (),
+}
+
 local function GetFolder(): Folder?
 	return ReplicatedStorage:FindFirstChild("Lunora")
 end
@@ -37,6 +67,12 @@ local function WaitFolder(): Folder?
 	return Folder
 end
 
+local function CreateRemote(ClassName: string, Folder: Folder)
+	local Remote = Instance.new(ClassName)
+	Remote.Name = ClassName
+	Remote.Parent = Folder
+end
+
 local function CreateFolder(): Folder
 	local Existing = GetFolder()
 	if Existing then
@@ -46,19 +82,15 @@ local function CreateFolder(): Folder
 	local Folder = Instance.new("Folder")
 	Folder.Name = "Lunora"
 
-	local Function = Instance.new("RemoteFunction")
-	Function.Name = "RemoteFunction"
-	Function.Parent = Folder
-
-	local Event = Instance.new("RemoteEvent")
-	Event.Name = "RemoteEvent"
-	Event.Parent = Folder
+	CreateRemote("RemoteFunction", Folder)
+	CreateRemote("RemoteEvent", Folder)
 
 	Folder.Parent = ReplicatedStorage
+
 	return Folder
 end
 
-local function ResolveRemotes()
+local function ResolveRemotes(): boolean
 	local Folder = WaitFolder()
 	if not Folder then
 		warn("[Lunora]: Failed to find network folder.")
@@ -69,7 +101,7 @@ local function ResolveRemotes()
 	return RemoteEvent ~= nil and RemoteFunction ~= nil
 end
 
-local function ImportModule(Module: ModuleScript)
+local function ImportModule(Module: ModuleScript): { [string]: any }?
 	local Existing = ModuleScripts[Module.Name]
 	if Existing == Module then
 		return Modules[Module.Name]
@@ -121,11 +153,11 @@ local function ResolvePublic(Module: { [string]: any }, Index: string): ((...any
 	return Function
 end
 
-local function NewBind(Name: string, Index: string, ...)
+local function NewBind(Name: string, Index: string, ...): Bind
 	local Bind = {}
 	local Data = table.pack(...)
 
-	local function BuildPayload()
+	local function BuildPayload(): Payload
 		return {
 			ModuleName = Name,
 			Index = Index,
@@ -133,9 +165,16 @@ local function NewBind(Name: string, Index: string, ...)
 		}
 	end
 
+	local function CanSend(Method: string): boolean
+		if Started then
+			return true
+		end
+		warn(string.format("[Lunora]: %s called before Start. (%s.%s)", Method, Name, Index))
+		return false
+	end
+
 	function Bind:Fire(Player: Player?)
-		if not Started then
-			warn(string.format("[Lunora]: Fire called before Start. (%s.%s)", Name, Index))
+		if not CanSend("Fire") then
 			return
 		end
 		if not IsServer then
@@ -147,9 +186,8 @@ local function NewBind(Name: string, Index: string, ...)
 		end
 	end
 
-	function Bind:Invoke(Player: Player?)
-		if not Started then
-			warn(string.format("[Lunora]: Invoke called before Start. (%s.%s)", Name, Index))
+	function Bind:Invoke(Player: Player?): ...any
+		if not CanSend("Invoke") then
 			return nil
 		end
 
@@ -173,9 +211,9 @@ local function NewBind(Name: string, Index: string, ...)
 	return Bind
 end
 
-local function NewSender(Name: string)
+local function NewSender(Name: string): Sender
 	return setmetatable({}, {
-		__index = function(_, Index: string)
+		__index = function(_, Index: string): (...any) -> Bind
 			return function(...)
 				return NewBind(Name, Index, ...)
 			end
@@ -208,7 +246,7 @@ local function ResolvePayload(Data: any): (string?, string?, { any })
 	return ModuleName, Index, InData
 end
 
-local function ListenFromClient(Player: Player, Data: any)
+local function ListenFromClient(Player: Player, Data: any): ...any
 	local ModuleName, Index, InData = ResolvePayload(Data)
 	if not ModuleName then
 		return nil
@@ -228,7 +266,7 @@ local function ListenFromClient(Player: Player, Data: any)
 	return Function(Player, table.unpack(InData, 1, InData.n))
 end
 
-local function ListenFromServer(Data: any)
+local function ListenFromServer(Data: any): ...any
 	local ModuleName, Index, InData = ResolvePayload(Data)
 	if not ModuleName then
 		return nil
@@ -258,13 +296,12 @@ local function ConnectClient()
 	RemoteFunction.OnClientInvoke = ListenFromServer
 end
 
-local function NewSignal()
+local function NewSignal(): Signal
 	local Signal = {}
-	local Listeners = {}
+	local Listeners: { Connection } = {}
 
-	function Signal:Connect(Callback: (...any) -> ())
+	function Signal:Connect(Callback: (...any) -> ()): Connection
 		local Connection = { Connected = true, Callback = Callback }
-		table.insert(Listeners, Connection)
 		function Connection:Disconnect()
 			Connection.Connected = false
 			local Index = table.find(Listeners, Connection)
@@ -272,6 +309,7 @@ local function NewSignal()
 				table.remove(Listeners, Index)
 			end
 		end
+		table.insert(Listeners, Connection)
 		return Connection
 	end
 
@@ -285,9 +323,9 @@ local function NewSignal()
 		end
 	end
 
-	function Signal:Wait()
+	function Signal:Wait(): ...any
 		local Thread = coroutine.running()
-		local Connection
+		local Connection: Connection
 		Connection = Signal:Connect(function(...)
 			Connection:Disconnect()
 			task.spawn(Thread, ...)
@@ -302,15 +340,15 @@ local function NewSignal()
 	return Signal
 end
 
-local function RunInit()
+local function RunLifecycle(Name: string)
 	for _, Module in Modules do
-		local Function = Module.Init
+		local Function = Module[Name]
 		if typeof(Function) ~= "function" then
 			continue
 		end
 		local Success, Error = pcall(Function, Module)
 		if not Success then
-			warn(string.format("[Lunora]: Init failed. %s", tostring(Error)))
+			warn(string.format("[Lunora]: %s failed. %s", Name, tostring(Error)))
 		end
 	end
 end
@@ -347,11 +385,11 @@ function Lunora.LoadSelf(Name: string): { [string]: any }?
 	return Module
 end
 
-function Lunora.Load(Name: string)
+function Lunora.Load(Name: string): Sender
 	return NewSender(Name)
 end
 
-function Lunora.NewSignal()
+function Lunora.NewSignal(): Signal
 	return NewSignal()
 end
 
@@ -389,7 +427,7 @@ function Lunora.Start()
 		ConnectClient()
 	end
 
-	RunInit()
+	RunLifecycle("Init")
 
 	Started = true
 
@@ -408,16 +446,7 @@ function Lunora.Stop()
 		return
 	end
 
-	for _, Module in Modules do
-		local Function = Module.Stop
-		if typeof(Function) ~= "function" then
-			continue
-		end
-		local Success, Error = pcall(Function, Module)
-		if not Success then
-			warn(string.format("[Lunora]: Stop failed. %s", tostring(Error)))
-		end
-	end
+	RunLifecycle("Stop")
 
 	for _, Connection in Connections do
 		if Connection.Connected then
