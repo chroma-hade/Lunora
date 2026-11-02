@@ -1,0 +1,8 @@
+[package]
+name = "chroma-hade/lunora"
+version = "1.0.0"
+registry = "https://github.com/UpliftGames/wally-index"
+realm = "shared"
+license = "MIT"
+description = "Tiny Roblox game framework. Your whole game talks through one ModuleScript."
+exclude = ["Lunora.rbxm", "aftman.toml"]
